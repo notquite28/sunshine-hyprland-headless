@@ -52,23 +52,50 @@ install_script() {
 configure_sunshine() {
   local start_script="${INSTALL_DIR}/sunshine-headless-start"
   local stop_script="${INSTALL_DIR}/sunshine-headless-stop"
+  local prep_cmd="[{\"do\":\"${start_script}\",\"undo\":\"${stop_script}\"}]"
   
   log "Configuring $SUNSHINE_CONF"
   
   # Create config directory if needed
   mkdir -p "$(dirname "$SUNSHINE_CONF")" || die "Failed to create config directory"
   
-  # Build prep command JSON
-  local prep_cmd="[{\"do\":\"${start_script}\",\"undo\":\"${stop_script}\"}]"
-  
-  # Write config
-  cat > "$SUNSHINE_CONF" <<EOF
+  # If config doesn't exist, create it with our settings
+  if [[ ! -f "$SUNSHINE_CONF" ]]; then
+    cat > "$SUNSHINE_CONF" <<EOF
 capture = wlr
 output_name = SUNSHINE
 global_prep_cmd = ${prep_cmd}
 EOF
+    log "Created new sunshine.conf"
+    return 0
+  fi
   
-  log "Sunshine configured"
+  # Config exists - update only our keys, preserve everything else
+  local tmp_file="${SUNSHINE_CONF}.tmp"
+  local keys_updated=()
+  
+  # Update or append each key
+  for key in capture output_name global_prep_cmd; do
+    local value
+    case "$key" in
+      capture) value="wlr" ;;
+      output_name) value="SUNSHINE" ;;
+      global_prep_cmd) value="$prep_cmd" ;;
+    esac
+    
+    if grep -q "^${key} *=" "$SUNSHINE_CONF"; then
+      # Key exists - update it
+      sed "s|^${key} *=.*|${key} = ${value}|" "$SUNSHINE_CONF" > "$tmp_file"
+      mv "$tmp_file" "$SUNSHINE_CONF"
+      keys_updated+=("$key")
+    else
+      # Key doesn't exist - append it
+      echo "${key} = ${value}" >> "$SUNSHINE_CONF"
+      keys_updated+=("$key")
+    fi
+  done
+  
+  log "Updated sunshine.conf: ${keys_updated[*]}"
 }
 
 # Install scripts
