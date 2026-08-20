@@ -5,6 +5,7 @@ set -Eeuo pipefail
 # Usage: curl -fsSL https://raw.githubusercontent.com/quiet/sunshine-hyprland-headless/main/install.sh | bash
 
 INSTALL_DIR="${HOME}/.local/bin"
+SUNSHINE_CONF="${XDG_CONFIG_HOME:-${HOME}/.config}/sunshine/sunshine.conf"
 
 log() { printf '[install] %s\n' "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
@@ -47,6 +48,29 @@ install_script() {
   chmod +x "$dst" || die "Failed to make $name executable"
 }
 
+# Configure sunshine.conf
+configure_sunshine() {
+  local start_script="${INSTALL_DIR}/sunshine-headless-start"
+  local stop_script="${INSTALL_DIR}/sunshine-headless-stop"
+  
+  log "Configuring $SUNSHINE_CONF"
+  
+  # Create config directory if needed
+  mkdir -p "$(dirname "$SUNSHINE_CONF")" || die "Failed to create config directory"
+  
+  # Build prep command JSON
+  local prep_cmd="[{\"do\":\"${start_script}\",\"undo\":\"${stop_script}\"}]"
+  
+  # Write config
+  cat > "$SUNSHINE_CONF" <<EOF
+capture = wlr
+output_name = SUNSHINE
+global_prep_cmd = ${prep_cmd}
+EOF
+  
+  log "Sunshine configured"
+}
+
 # Install scripts
 SCRIPTS=(
   "sunshine-headless-start"
@@ -58,17 +82,16 @@ for script in "${SCRIPTS[@]}"; do
   install_script "$script"
 done
 
+# Configure sunshine
+configure_sunshine
+
 log "Installation complete!"
 log
-log "Next steps:"
-log "  1. Configure Sunshine Web UI:"
-log "     - Capture Method: wlr"
-log "     - Display ID: SUNSHINE"
-log "     - Global Prep Do: $INSTALL_DIR/sunshine-headless-start"
-log "     - Global Prep Undo: $INSTALL_DIR/sunshine-headless-stop"
+log "Restart Sunshine to apply changes:"
+log "  systemctl --user restart sunshine"
 log
-log "  2. Test manually:"
-log "     SUNSHINE_CLIENT_WIDTH=2560 SUNSHINE_CLIENT_HEIGHT=1440 SUNSHINE_CLIENT_FPS=120 \\"
-log "       $INSTALL_DIR/sunshine-headless-start"
-log "     hyprctl monitors all"
-log "     $INSTALL_DIR/sunshine-headless-stop"
+log "Test manually:"
+log "  SUNSHINE_CLIENT_WIDTH=2560 SUNSHINE_CLIENT_HEIGHT=1440 SUNSHINE_CLIENT_FPS=120 \\"
+log "    $INSTALL_DIR/sunshine-headless-start"
+log "  hyprctl monitors all"
+log "  $INSTALL_DIR/sunshine-headless-stop"

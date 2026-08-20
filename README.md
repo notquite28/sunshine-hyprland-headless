@@ -1,191 +1,176 @@
 # Sunshine Hyprland Headless
 
-Production-ready automation for headless Sunshine + Moonlight streaming on Hyprland.
+Stream your Hyprland desktop over Moonlight without any physical monitors plugged in. No HDMI dummy plugs, no hardcoded configs.
 
-## Overview
+## What it does
 
-This project enables streaming a Hyprland session via Sunshine/Moonlight without requiring physical monitors. It dynamically creates a virtual headless output that matches the Moonlight client's requested resolution and FPS, disables physical monitors during streaming, and restores the original monitor configuration when streaming ends.
+Sunshine's WLR capture grabs whatever output Hyprland thinks is primary. When you're streaming remotely, you don't want your real monitors mirroring the stream — you want a virtual display that matches whatever resolution your Moonlight client asked for, with your physical monitors off.
 
-## Architecture
+These scripts handle that:
+
+- **Stream starts** → saves your current monitor layout, creates a virtual `SUNSHINE` output at the client's resolution, turns off your physical monitors
+- **Stream ends** → puts your physical monitors back exactly how they were, removes the virtual output
+
+## How it fits together
 
 ```
-Moonlight Client
-    ↓ (requests resolution/FPS)
-Sunshine Server
-    ↓ (WLR capture)
-Hyprland Compositor
-    ↓ (manages outputs)
-Virtual SUNSHINE Output
+Moonlight (client)
+    │  requests resolution + FPS
+    ▼
+Sunshine (server)
+    │  WLR capture
+    ▼
+Hyprland
+    │  manages outputs
+    ▼
+Virtual SUNSHINE output
+(whatever res/fps the client wants)
 ```
 
-**No dummy plug required** - Hyprland's headless output support eliminates the need for HDMI/DisplayPort dummy plugs.
+Why turn off physical monitors? Sunshine captures the primary display. If your real monitors are active, they fight for capture priority. Turning them off makes sure Sunshine grabs the virtual output.
 
-**Important**: Hyprland must already be running. This setup does not create a Wayland session from nothing.
+No dummy plug needed — Hyprland can create headless outputs in software. Your GPU driver just needs to support it (most modern ones do).
+
+**Note:** Hyprland needs to already be running. This doesn't create a Wayland session, it just manages outputs inside one.
 
 ## Requirements
 
-- **Hyprland 0.55+** (with Lua-based runtime configuration)
-- **Sunshine** (with WLR capture support)
-- **Moonlight** (client)
-- **jq** (JSON processor)
-- **bash** (4.0+)
+- Hyprland 0.55+ (needs the Lua `hyprctl eval` API)
+- Sunshine (WLR capture)
+- Moonlight
+- jq
+- bash 4.0+
 
-## Installation
+## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/quiet/sunshine-hyprland-headless/main/install.sh | bash
 ```
 
-Downloads and installs all scripts to `~/.local/bin/`.
+Drops everything into `~/.local/bin/`.
 
-## Configuration
+## Setup
 
-### Sunshine Settings
+### Sunshine Web UI
 
-In Sunshine Web UI (`http://localhost:47990`):
+Go to `http://localhost:47990`:
 
-1. **Capture Method**: `wlr`
-2. **Display ID**: `SUNSHINE`
+- **Capture Method:** `wlr`
+- **Display ID:** `SUNSHINE`
 
 ### Global Prep Commands
 
-Configure Sunshine to run these scripts automatically:
+In the Sunshine config, set:
 
-**Do** (when stream starts):
-```
-$HOME/.local/bin/sunshine-headless-start
-```
+- **Do:** `$HOME/.local/bin/sunshine-headless-start`
+- **Undo:** `$HOME/.local/bin/sunshine-headless-stop`
 
-**Undo** (when stream ends):
-```
-$HOME/.local/bin/sunshine-headless-stop
-```
-
-**Note**: If Sunshine doesn't expand `$HOME`, get the absolute path:
+If Sunshine doesn't expand `$HOME`, run this and paste the output:
 ```bash
 printf '%s\n' "$HOME/.local/bin/sunshine-headless-start"
 ```
 
-## Usage
+## Testing
 
-### Manual Testing
-
-Before wiring into Sunshine, test manually:
+Try it manually before hooking it up to Sunshine:
 
 ```bash
-# Start headless streaming (simulates 2560x1440@120Hz client)
+# Pretend a 2560x1440@120 client connected
 SUNSHINE_CLIENT_WIDTH=2560 \
 SUNSHINE_CLIENT_HEIGHT=1440 \
 SUNSHINE_CLIENT_FPS=120 \
 ~/.local/bin/sunshine-headless-start
 
-# Verify setup
+# Should see SUNSHINE output, physicals gone
 hyprctl monitors all
 
-# Stop and restore
+# Put everything back
 ~/.local/bin/sunshine-headless-stop
 ```
 
-### Check Status
-
+Check what's going on at any time:
 ```bash
 ~/.local/bin/sunshine-headless-status
 ```
 
-## How It Works
+## How it actually works
 
-### Start Script
+### Start script
 
-1. Validates dependencies (hyprctl, jq, Hyprland running)
-2. Acquires exclusive lock to prevent concurrent modifications
-3. Detects active physical monitors via `hyprctl monitors all -j`
-4. Saves monitor configuration to runtime state file
-5. Creates `SUNSHINE` headless output (if not exists)
-6. Configures SUNSHINE with client resolution/FPS
-7. Verifies SUNSHINE output is active
-8. Disables all physical monitors
-9. Releases lock
+1. Checks that `hyprctl`, `jq`, and Hyprland are all available
+2. Grabs an exclusive lock (so two simultaneous streams don't step on each other)
+3. Runs `hyprctl monitors all -j` and pipes through `jq` to get every physical monitor's name, resolution, refresh rate, position, and scale
+4. Saves that to a JSON file in `${XDG_RUNTIME_DIR:-/tmp}/sunshine-hyprland-headless-${UID}/`
+5. Creates the `SUNSHINE` headless output if it doesn't already exist
+6. Sets it to whatever resolution/FPS the Moonlight client requested (via `SUNSHINE_CLIENT_WIDTH`/`HEIGHT`/`FPS` env vars, defaults to 1920x1080@60)
+7. **Verifies** the SUNSHINE output is actually active before touching physical monitors
+8. Disables each physical monitor via `hyprctl eval` with the Lua API
+9. Releases the lock
 
-### Stop Script
+If anything fails partway through, a trap runs the stop script to put your monitors back.
 
-1. Validates dependencies
-2. Acquires exclusive lock
-3. Loads saved monitor configuration
-4. Restores each physical monitor with exact settings (resolution, refresh rate, position, scale)
-5. Verifies physical monitors are back
-6. Removes SUNSHINE output
-7. Cleans up runtime state
-8. Releases lock
+### Stop script
 
-### Runtime State
+1. Grabs the same lock
+2. Reads the saved JSON
+3. For each monitor, runs `hyprctl eval` with `disabled = false` and the exact saved mode/position/scale
+4. Checks that physical monitors are back
+5. Removes the SUNSHINE output
+6. Cleans up the state files
+7. Releases the lock
 
-State is stored in `${XDG_RUNTIME_DIR:-/tmp}/sunshine-hyprland-headless-${UID}/`:
-- `monitors.json` - saved monitor configuration
-- `lock` - exclusive lock file
+Safe to run multiple times — if there's no saved state, it just skips.
+
+### State files
+
+Everything lives in `${XDG_RUNTIME_DIR:-/tmp}/sunshine-hyprland-headless-${UID}/`:
+- `monitors.json` — your physical monitor snapshot
+- `lock` — flock lock file
+
+Cleaned up automatically on stop.
+
+## "Please don't brick my monitors"
+
+**Test the stop script first.** Seriously, run `sunshine-headless-stop` a few times before letting the start script turn off all your physical displays. Make sure your monitors come back.
+
+If something goes sideways:
+1. SSH in
+2. Run `~/.local/bin/sunshine-headless-stop`
+3. Or manually: `hyprctl eval 'hl.monitor({output = "DP-1", disabled = false, mode = "2560x1440@165", position = "0x0", scale = 1})'`
 
 ## Troubleshooting
 
-### "keyword can't work with non-legacy parsers. Use eval."
+**"keyword can't work with non-legacy parsers. Use eval."**
+You're on Hyprland < 0.55. This uses the Lua API. Upgrade.
 
-This project uses Hyprland 0.55+ Lua API (`hyprctl eval`). Ensure you're running Hyprland 0.55 or newer:
+**Sunshine shows "Display ID" not "Output Name"**
+Same thing. Set Display ID to `SUNSHINE`.
 
+**Moonlight shows a frozen screen after I manually ran stop**
+That's because stop removes the SUNSHINE output, which is what Sunshine was capturing. During normal use, the undo command fires as the stream ends so you won't see this.
+
+**Physical monitors didn't come back**
+The script sets `disabled = false` explicitly — that's required, just setting a mode isn't enough. Check the saved state:
 ```bash
-hyprctl version
+cat "${XDG_RUNTIME_DIR:-/tmp}/sunshine-hyprland-headless-${UID}/monitors.json"
 ```
+And check Hyprland logs: `journalctl --user -u hyprland -f`
 
-### Sunshine shows "Display ID" instead of "Output Name"
-
-In Sunshine, **Display ID = SUNSHINE** corresponds to the `output_name` setting. Set Display ID to `SUNSHINE`.
-
-### Moonlight shows last frame/empty screen after manual stop
-
-This is expected during manual testing. The stop script removes the SUNSHINE output, which is Sunshine's capture target. Normally the Undo command runs as the stream terminates.
-
-### Physical monitors fail to return
-
-The restoration explicitly sets `disabled = false`. If monitors still don't return:
-
-1. Check if state file exists: `cat ${XDG_RUNTIME_DIR:-/tmp}/sunshine-hyprland-headless-${UID}/monitors.json`
-2. Manually restore with `hyprctl eval`
-3. Check Hyprland logs: `journalctl --user -u hyprland -f`
-
-### Sunshine doesn't see virtual output
-
-Verify SUNSHINE output exists:
+**Sunshine doesn't see the virtual output**
 ```bash
 hyprctl monitors all | grep SUNSHINE
-```
-
-Check Sunshine logs:
-```bash
 sunshine 2>&1 | tee /tmp/sunshine.log
-grep -Ei 'prep|command|SUNSHINE|display|output|wlr|error|warn' /tmp/sunshine.log
+grep -Ei 'SUNSHINE|wlr|display|output' /tmp/sunshine.log
 ```
-
-Look for:
-- `Name: SUNSHINE`
-- `[wlgrab] Monitor ... is SUNSHINE`
-
-## Safety
-
-**Test the stop script before allowing the start script to disable all physical monitors.**
-
-If something goes wrong:
-1. SSH into the machine
-2. Run `~/.local/bin/sunshine-headless-stop`
-3. Or manually restore monitors via `hyprctl eval`
+You're looking for `Name: SUNSHINE` and `[wlgrab] Monitor ... is SUNSHINE`.
 
 ## Limitations
 
-- Requires Hyprland 0.55+ with Lua monitor configuration support
-- Requires working headless output support in your GPU driver
-- Single-user per system (lock is per-UID)
-- Does not handle multi-GPU setups explicitly
+- Hyprland 0.55+ only
+- GPU driver needs to support headless outputs
+- One user per machine (lock is per-UID)
+- Doesn't handle multi-GPU setups
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-Issues and PRs welcome. Please test on your setup before submitting changes.
+MIT
