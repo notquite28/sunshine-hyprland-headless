@@ -55,7 +55,7 @@ echo
 
 # Show all current monitors
 echo "=== Current Monitor Configuration ==="
-hyprctl monitors all -j | jq -r '.[] | "  \(.name): \(.width)x\(.height)@\(.refreshRate)Hz at \(.x),\(.y) scale=\(.scale)"'
+hyprctl monitors all -j | jq -r '.[] | "  \(.name): \(.width)x\(.height)@\(.refreshRate)Hz at \(.x),\(.y) scale=\(.scale)\(if .disabled then " [DISABLED]" else "" end)"'
 
 echo
 
