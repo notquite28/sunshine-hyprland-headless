@@ -1,0 +1,24 @@
+# Runtime state
+*.json
+!package.json
+!package-lock.json
+
+# Lock files
+*.lock
+
+# Logs
+*.log
+
+# Editor backups
+*~
+*.swp
+*.swo
+*#
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/

@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Sunshine headless streaming stop script for Hyprland 0.55+
+# Restores physical monitors from saved state and removes SUNSHINE output.
+
+SCRIPT_NAME="$(basename "$0")"
+log() { printf '[%s] %s\n' "$SCRIPT_NAME" "$*"; }
+die() { log "ERROR: $*" >&2; exit 1; }
+
+# Runtime state directory
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/sunshine-hyprland-headless-${UID}"
+STATE_FILE="${RUNTIME_DIR}/monitors.json"
+LOCK_FILE="${RUNTIME_DIR}/lock"
+
+# Cleanup on failure
+cleanup_on_failure() {
+  local exit_code=$?
+  # Release lock
+  if [[ -n "${LOCK_FD:-}" ]]; then
+    flock -u "$LOCK_FD" 2>/dev/null || true
+  fi
+  exit "$exit_code"
+}
+trap cleanup_on_failure ERR
+
+# Validate dependencies
+validate_deps() {
+  command -v hyprctl >/dev/null 2>&1 || die "hyprctl not found. Is Hyprland installed?"
+  command -v jq >/dev/null 2>&1 || die "jq not found. Install it: pacman -S jq / apt install jq"
+  
+  # Check if Hyprland is running
+  if ! hyprctl monitors >/dev/null 2>&1; then
+    die "Hyprland is not running or hyprctl cannot connect"
+  fi
+}
+
+# Acquire exclusive lock
+acquire_lock() {
+  mkdir -p "$RUNTIME_DIR"
+  exec {LOCK_FD}>"$LOCK_FILE"
+  flock -x "$LOCK_FD" || die "Failed to acquire lock"
+}
+
+# Restore physical monitors from saved state
+restore_monitors() {
+  if [[ ! -f "$STATE_FILE" ]]; then
+    log "No saved monitor state found at $STATE_FILE"
+    log "Skipping monitor restoration"
+    return 0
+  fi
+  
+  local count
+  count=$(jq 'length' "$STATE_FILE")
+  
+  if (( count == 0 )); then
+    log "No monitors to restore"
+    return 0
+  fi
+  
+  log "Restoring $count physical monitor(s)..."
+  
+  # Restore each monitor with exact configuration
+  jq -c '.[]' "$STATE_FILE" | while read -r monitor; do
+    local name width height refresh x y scale
+    
+    name=$(echo "$monitor" | jq -r '.name')
+    width=$(echo "$monitor" | jq -r '.width')
+    height=$(echo "$monitor" | jq -r '.height')
+    refresh=$(echo "$monitor" | jq -r '.refresh')
+    x=$(echo "$monitor" | jq -r '.x')
+    y=$(echo "$monitor" | jq -r '.y')
+    scale=$(echo "$monitor" | jq -r '.scale')
+    
+    log "  Restoring $name: ${width}x${height}@${refresh}Hz at ${x},${y} scale=$scale"
+    
+    # Format refresh rate - preserve precision but avoid unnecessary decimals
+    local refresh_str
+    if [[ "$refresh" =~ \. ]]; then
+      # Has decimal point - preserve up to 2 decimal places
+      refresh_str=$(printf "%.2f" "$refresh" | sed 's/\.00$//' | sed 's/\(\.[0-9]\)0$/\1/')
+    else
+      refresh_str="$refresh"
+    fi
+    
+    hyprctl eval "hl.monitor({
+  output = \"$name\",
+  disabled = false,
+  mode = \"${width}x${height}@${refresh_str}\",
+  position = \"${x}x${y}\",
+  scale = $scale
+})" || log "  Warning: failed to restore $name"
+  done
+  
+  sleep 0.5
+}
+
+# Verify physical monitors are back
+verify_physical_monitors() {
+  if [[ ! -f "$STATE_FILE" ]]; then
+    return 0
+  fi
+  
+  local expected_count
+  expected_count=$(jq 'length' "$STATE_FILE")
+  
+  if (( expected_count == 0 )); then
+    return 0
+  fi
+  
+  # Count active physical monitors (excluding SUNSHINE)
+  local actual_count
+  actual_count=$(hyprctl monitors all -j | jq '[.[] | select(.name != "SUNSHINE")] | length')
+  
+  if (( actual_count < expected_count )); then
+    log "Warning: expected $expected_count physical monitor(s), found $actual_count"
+  else
+    log "Physical monitors verified: $actual_count active"
+  fi
+}
+
+# Remove SUNSHINE headless output
+remove_headless_output() {
+  if ! hyprctl monitors all | grep -q '^Monitor SUNSHINE '; then
+    log "SUNSHINE output not found, skipping removal"
+    return 0
+  fi
+  
+  log "Removing SUNSHINE headless output..."
+  hyprctl output remove SUNSHINE || log "Warning: failed to remove SUNSHINE output"
+  sleep 0.5
+}
+
+# Cleanup runtime state
+cleanup_state() {
+  if [[ -f "$STATE_FILE" ]]; then
+    rm -f "$STATE_FILE"
+    log "Cleaned up state file"
+  fi
+}
+
+# Main flow
+main() {
+  log "Stopping Sunshine headless streaming"
+  
+  validate_deps
+  acquire_lock
+  
+  restore_monitors
+  verify_physical_monitors
+  remove_headless_output
+  cleanup_state
+  
+  log "Cleanup complete. Physical monitors restored, SUNSHINE output removed."
+}
+
+main "$@"
