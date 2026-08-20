@@ -32,13 +32,21 @@ Virtual SUNSHINE Output
 
 ## Installation
 
-### Quick Install
+### One-liner Install (Recommended)
 
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/quiet/sunshine-hyprland-headless/main/install.sh | bash
 ```
 
-This copies scripts to `~/.local/bin/` and makes them executable.
+This downloads and installs all scripts to `~/.local/bin/`.
+
+### Install from Git Clone
+
+```bash
+git clone https://github.com/quiet/sunshine-hyprland-headless.git
+cd sunshine-hyprland-headless
+./install.sh
+```
 
 ### Manual Installation
 
