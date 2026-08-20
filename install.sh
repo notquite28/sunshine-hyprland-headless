@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # One-liner installer for sunshine-hyprland-headless
 # Usage: curl -fsSL https://raw.githubusercontent.com/quiet/sunshine-hyprland-headless/main/install.sh | bash
 
-INSTALL_DIR="${HOME}/.local/bin"
+INSTALL_DIR="${HOME}/.local/scripts"
 SUNSHINE_CONF="${XDG_CONFIG_HOME:-${HOME}/.config}/sunshine/sunshine.conf"
 
 log() { printf '[install] %s\n' "$*"; }
@@ -22,11 +22,11 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
   mkdir -p "$INSTALL_DIR" || die "Failed to create $INSTALL_DIR"
 fi
 
-# Check if ~/.local/bin is in PATH
+# Check if ~/.local/scripts is in PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   log "WARNING: $INSTALL_DIR is not in your PATH"
   log "Add this to your shell config (~/.bashrc, ~/.zshrc, etc.):"
-  log "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  log "  export PATH=\"\$HOME/.local/scripts:\$PATH\""
   echo
 fi
 

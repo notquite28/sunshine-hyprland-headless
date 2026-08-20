@@ -1,6 +1,6 @@
 # Sunshine Hyprland Headless
 
-Stream your Hyprland desktop over Moonlight without any physical monitors plugged in. No HDMI dummy plugs, no hardcoded configs.
+Stream your Hyprland desktop over Moonlight with your monitors turned off. No Apollo-Artemis tinkering on Linux, no HDMI dummy plugs, no hardcoded configs.
 
 ## What it does
 
@@ -47,7 +47,7 @@ No dummy plug needed — Hyprland can create headless outputs in software. Your 
 curl -fsSL https://raw.githubusercontent.com/quiet/sunshine-hyprland-headless/main/install.sh | bash
 ```
 
-Drops everything into `~/.local/bin/`.
+Drops everything into `~/.local/scripts/`.
 
 ## Setup
 
@@ -62,12 +62,12 @@ Go to `http://localhost:47990`:
 
 In the Sunshine config, set:
 
-- **Do:** `$HOME/.local/bin/sunshine-headless-start`
-- **Undo:** `$HOME/.local/bin/sunshine-headless-stop`
+- **Do:** `$HOME/.local/scripts/sunshine-headless-start`
+- **Undo:** `$HOME/.local/scripts/sunshine-headless-stop`
 
 If Sunshine doesn't expand `$HOME`, run this and paste the output:
 ```bash
-printf '%s\n' "$HOME/.local/bin/sunshine-headless-start"
+printf '%s\n' "$HOME/.local/scripts/sunshine-headless-start"
 ```
 
 ## Testing
@@ -79,18 +79,18 @@ Try it manually before hooking it up to Sunshine:
 SUNSHINE_CLIENT_WIDTH=2560 \
 SUNSHINE_CLIENT_HEIGHT=1440 \
 SUNSHINE_CLIENT_FPS=120 \
-~/.local/bin/sunshine-headless-start
+~/.local/scripts/sunshine-headless-start
 
 # Should see SUNSHINE output, physicals gone
 hyprctl monitors all
 
 # Put everything back
-~/.local/bin/sunshine-headless-stop
+~/.local/scripts/sunshine-headless-stop
 ```
 
 Check what's going on at any time:
 ```bash
-~/.local/bin/sunshine-headless-status
+~/.local/scripts/sunshine-headless-status
 ```
 
 ## How it actually works
@@ -135,7 +135,7 @@ Cleaned up automatically on stop.
 
 If something goes sideways:
 1. SSH in
-2. Run `~/.local/bin/sunshine-headless-stop`
+2. Run `~/.local/scripts/sunshine-headless-stop`
 3. Or manually: `hyprctl eval 'hl.monitor({output = "DP-1", disabled = false, mode = "2560x1440@165", position = "0x0", scale = 1})'`
 
 ## Troubleshooting
