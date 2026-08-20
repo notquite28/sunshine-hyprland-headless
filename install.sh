@@ -11,7 +11,7 @@ log() { printf '[install] %s\n' "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
 # GitHub repository configuration
-GITHUB_USER="${GITHUB_USER:-quiet}"
+GITHUB_USER="${GITHUB_USER:-notquite28}"
 GITHUB_REPO="${GITHUB_REPO:-sunshine-hyprland-headless}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 BASE_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}"
