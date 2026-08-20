@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # One-liner installer for sunshine-hyprland-headless
-# Usage: curl -fsSL https://raw.githubusercontent.com/quiet/sunshine-hyprland-headless/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/notquite28/sunshine-hyprland-headless/main/install.sh | bash
 
 INSTALL_DIR="${HOME}/.local/scripts"
 SUNSHINE_CONF="${XDG_CONFIG_HOME:-${HOME}/.config}/sunshine/sunshine.conf"
@@ -52,15 +52,21 @@ install_script() {
 configure_sunshine() {
   local start_script="${INSTALL_DIR}/sunshine-headless-start"
   local stop_script="${INSTALL_DIR}/sunshine-headless-stop"
-  local prep_cmd="[{\"do\":\"${start_script}\",\"undo\":\"${stop_script}\"}]"
   
   log "Configuring $SUNSHINE_CONF"
   
   # Create config directory if needed
   mkdir -p "$(dirname "$SUNSHINE_CONF")" || die "Failed to create config directory"
   
+  # Backup existing config
+  if [[ -f "$SUNSHINE_CONF" ]]; then
+    cp "$SUNSHINE_CONF" "${SUNSHINE_CONF}.bak"
+    log "Backed up existing config to ${SUNSHINE_CONF}.bak"
+  fi
+  
   # If config doesn't exist, create it with our settings
   if [[ ! -f "$SUNSHINE_CONF" ]]; then
+    local prep_cmd="[{\"do\":\"${start_script}\",\"undo\":\"${stop_script}\"}]"
     cat > "$SUNSHINE_CONF" <<EOF
 capture = wlr
 output_name = SUNSHINE
@@ -74,26 +80,37 @@ EOF
   local tmp_file="${SUNSHINE_CONF}.tmp"
   local keys_updated=()
   
-  # Update or append each key
-  for key in capture output_name global_prep_cmd; do
-    local value
-    case "$key" in
-      capture) value="wlr" ;;
-      output_name) value="SUNSHINE" ;;
-      global_prep_cmd) value="$prep_cmd" ;;
-    esac
-    
-    if grep -q "^${key} *=" "$SUNSHINE_CONF"; then
-      # Key exists - update it
-      sed "s|^${key} *=.*|${key} = ${value}|" "$SUNSHINE_CONF" > "$tmp_file"
-      mv "$tmp_file" "$SUNSHINE_CONF"
-      keys_updated+=("$key")
-    else
-      # Key doesn't exist - append it
-      echo "${key} = ${value}" >> "$SUNSHINE_CONF"
-      keys_updated+=("$key")
-    fi
-  done
+  # Update capture method
+  if grep -q "^capture *=" "$SUNSHINE_CONF"; then
+    sed "s|^capture *=.*|capture = wlr|" "$SUNSHINE_CONF" > "$tmp_file"
+    mv "$tmp_file" "$SUNSHINE_CONF"
+    keys_updated+=("capture")
+  else
+    echo "capture = wlr" >> "$SUNSHINE_CONF"
+    keys_updated+=("capture")
+  fi
+  
+  # Update output name
+  if grep -q "^output_name *=" "$SUNSHINE_CONF"; then
+    sed "s|^output_name *=.*|output_name = SUNSHINE|" "$SUNSHINE_CONF" > "$tmp_file"
+    mv "$tmp_file" "$SUNSHINE_CONF"
+    keys_updated+=("output_name")
+  else
+    echo "output_name = SUNSHINE" >> "$SUNSHINE_CONF"
+    keys_updated+=("output_name")
+  fi
+  
+  # Handle global_prep_cmd - merge if exists, don't overwrite
+  if grep -q "^global_prep_cmd *=" "$SUNSHINE_CONF"; then
+    log "global_prep_cmd already exists in config"
+    log "Please manually add this entry to your global_prep_cmd array:"
+    log "  {\"do\":\"${start_script}\",\"undo\":\"${stop_script}\"}"
+    log "Skipping global_prep_cmd update to preserve existing commands"
+  else
+    local prep_cmd="[{\"do\":\"${start_script}\",\"undo\":\"${stop_script}\"}]"
+    echo "global_prep_cmd = ${prep_cmd}" >> "$SUNSHINE_CONF"
+    keys_updated+=("global_prep_cmd")
+  fi
   
   log "Updated sunshine.conf: ${keys_updated[*]}"
 }

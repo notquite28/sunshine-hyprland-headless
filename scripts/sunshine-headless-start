@@ -19,18 +19,28 @@ DEFAULT_WIDTH="${SUNSHINE_CLIENT_WIDTH:-1920}"
 DEFAULT_HEIGHT="${SUNSHINE_CLIENT_HEIGHT:-1080}"
 DEFAULT_FPS="${SUNSHINE_CLIENT_FPS:-60}"
 
-# Cleanup on failure
+# Lock file descriptor (set by acquire_lock)
+LOCK_FD=""
+
+# Cleanup on failure - restores monitors without re-acquiring lock
 cleanup_on_failure() {
   local exit_code=$?
   if [[ -f "$STATE_FILE" ]]; then
     log "Setup failed, attempting to restore monitors..."
+    # Release lock before calling stop to avoid deadlock
+    if [[ -n "$LOCK_FD" ]]; then
+      flock -u "$LOCK_FD" 2>/dev/null || true
+      LOCK_FD=""
+    fi
     if [[ -x "$(dirname "$0")/sunshine-headless-stop" ]]; then
       "$(dirname "$0")/sunshine-headless-stop" || log "Restoration failed"
     fi
-  fi
-  # Release lock
-  if [[ -n "${LOCK_FD:-}" ]]; then
-    flock -u "$LOCK_FD" 2>/dev/null || true
+  else
+    # No state file yet - just release lock
+    if [[ -n "$LOCK_FD" ]]; then
+      flock -u "$LOCK_FD" 2>/dev/null || true
+      LOCK_FD=""
+    fi
   fi
   exit "$exit_code"
 }
@@ -40,6 +50,7 @@ trap cleanup_on_failure ERR
 validate_deps() {
   command -v hyprctl >/dev/null 2>&1 || die "hyprctl not found. Is Hyprland installed?"
   command -v jq >/dev/null 2>&1 || die "jq not found. Install it: pacman -S jq / apt install jq"
+  command -v flock >/dev/null 2>&1 || die "flock not found. Install util-linux."
   
   # Check if Hyprland is running
   if ! hyprctl monitors >/dev/null 2>&1; then
@@ -72,11 +83,19 @@ acquire_lock() {
   flock -x "$LOCK_FD" || die "Failed to acquire lock"
 }
 
+# Check if session already active (prevents double-start)
+check_existing_session() {
+  if [[ -f "$STATE_FILE" ]]; then
+    die "An existing Sunshine headless session is already active. Run sunshine-headless-stop first."
+  fi
+}
+
 # Save current physical monitor configuration
 save_monitor_state() {
   log "Saving current monitor configuration..."
   
   # Get all monitors as JSON, filter out SUNSHINE virtual output
+  # Preserve actual disabled state for faithful restoration
   hyprctl monitors all -j | jq -c '
     [.[] | select(.name != "SUNSHINE") | {
       name: .name,
@@ -86,7 +105,7 @@ save_monitor_state() {
       x: .x,
       y: .y,
       scale: .scale,
-      disabled: false
+      disabled: .disabled
     }]
   ' > "$STATE_FILE"
   
@@ -146,7 +165,7 @@ disable_physical_monitors() {
     hyprctl eval "hl.monitor({
   output = \"$name\",
   disabled = true
-})" || log "  Warning: failed to disable $name"
+})" || die "Failed to disable $name"
   done
   
   sleep 0.5
@@ -159,6 +178,7 @@ main() {
   validate_deps
   validate_sunshine_vars
   acquire_lock
+  check_existing_session
   
   save_monitor_state
   create_headless_output
