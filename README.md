@@ -44,7 +44,7 @@ No dummy plug needed — Hyprland can create headless outputs in software. Your 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/quiet/sunshine-hyprland-headless/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/notquite28/sunshine-hyprland-headless/main/install.sh | bash
 ```
 
 Drops everything into `~/.local/scripts/`.
