@@ -104,6 +104,9 @@ restore_monitors() {
 })" || { log "ERROR: failed to restore $name"; return 1; }
     fi
   done < <(jq -c '.[]' "$STATE_FILE")
+
+  # Wait for Hyprland to apply async monitor changes
+  sleep 0.5
 }
 
 # Verify physical monitors are back
@@ -175,6 +178,20 @@ remove_headless_output() {
   hyprctl output remove SUNSHINE || die "Failed to remove SUNSHINE output"
   sleep 0.5
 }
+# Restart noctalia bar if it was running
+restart_bar() {
+  # Check if noctalia-shell is configured (from autostart.lua)
+  if command -v qs >/dev/null 2>&1; then
+    log "Restarting noctalia bar..."
+    # Kill any existing instance first
+    pkill -f "qs -c noctalia-shell" 2>/dev/null || true
+    sleep 0.2
+    # Start fresh instance
+    qs -c noctalia-shell &
+    sleep 0.5
+    log "Noctalia bar restarted"
+  fi
+}
 
 # Cleanup runtime state
 cleanup_state() {
@@ -187,15 +204,16 @@ cleanup_state() {
 # Main flow
 main() {
   log "Stopping Sunshine headless streaming"
-  
+
   validate_deps
   acquire_lock
-  
+
   restore_monitors
   verify_physical_monitors
   remove_headless_output
   cleanup_state
-  
+  restart_bar
+
   log "Cleanup complete. Physical monitors restored, SUNSHINE output removed."
 }
 

@@ -155,19 +155,19 @@ verify_headless_output() {
 # Disable all physical monitors
 disable_physical_monitors() {
   log "Disabling physical monitors..."
-  
-  # Read saved state and disable each monitor
-  jq -c '.[]' "$STATE_FILE" | while read -r monitor; do
+
+  # Use process substitution to avoid subshell — die must exit the main shell
+  while read -r monitor; do
     local name
     name=$(echo "$monitor" | jq -r '.name')
-    
+
     log "  Disabling $name"
     hyprctl eval "hl.monitor({
   output = \"$name\",
   disabled = true
 })" || die "Failed to disable $name"
-  done
-  
+  done < <(jq -c '.[]' "$STATE_FILE")
+
   sleep 0.5
 }
 
